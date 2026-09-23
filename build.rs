@@ -247,9 +247,14 @@ fn main() {
     }
 
     if target_os == "emscripten" {
+        // cpp! code in the browser-only sources
+        for p in ["src/web", "src/rendering_wasm.rs", "src/rendering/render_queue.rs", "src/rendering/mdk_processor.rs"] { println!("cargo:rerun-if-changed={p}"); }
         let lib = format!("{}/src/web/library_gfweb.js", std::env::var("CARGO_MANIFEST_DIR").unwrap());
         println!("cargo:rerun-if-changed={lib}");
         println!("cargo:rustc-link-arg=--js-library={lib}");
+        // Cargo doesn't relink when only the JS library changes; tie its contents to the crate
+        let h = std::fs::read(&lib).unwrap_or_default().iter().fold(0xcbf29ce484222325u64, |h, b| (h ^ *b as u64).wrapping_mul(0x100000001b3));
+        println!("cargo:rustc-env=GFWEB_LIBRARY_HASH={h:x}");
     }
     if let Ok(f) = std::env::var("QT_WASM_LINK_ARGS") {
         println!("cargo:rerun-if-changed={f}");

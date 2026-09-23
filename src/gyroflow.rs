@@ -11,6 +11,7 @@ use std::cell::RefCell;
 
 pub use gyroflow_core as core;
 #[cfg(target_os = "emscripten")] extern crate ffmpeg_web as ffmpeg_next;
+#[cfg(target_os = "emscripten")] #[used] static GFWEB_LIBRARY_HASH: &str = env!("GFWEB_LIBRARY_HASH"); // relink when src/web/library_gfweb.js changes
 pub mod util;
 pub mod controller;
 #[cfg(not(target_os = "emscripten"))]

@@ -18,6 +18,64 @@ addToLibrary({
     files: [null],
     players: [null],
     decoders: {},
+    exports: {},
+    gpuDevice() {
+      return GFWEB.device ??= navigator.gpu.requestAdapter({ powerPreference: 'high-performance' }).then((a) => a.requestDevice({ requiredLimits: { maxStorageBufferBindingSize: a.limits.maxStorageBufferBindingSize } }));
+    },
+    // gyroflow's wgpu_undistort.wgsl in its texture-input variant (bindings as in src/core/gpu/wgpu.rs)
+    undistort(d, code, coeffs) {
+      var module = d.createShaderModule({ code });
+      var ro = { type: 'read-only-storage' }, F = GPUShaderStage.FRAGMENT;
+      var layout = d.createBindGroupLayout({ entries: [
+        { binding: 0, visibility: F, buffer: { type: 'uniform' } }, { binding: 1, visibility: F, buffer: ro }, { binding: 2, visibility: F, buffer: ro },
+        { binding: 3, visibility: F, buffer: ro }, { binding: 4, visibility: F, buffer: ro }, { binding: 5, visibility: F, texture: { sampleType: 'float' } },
+      ] });
+      var buf = (size, usage) => d.createBuffer({ size: Math.max(16, Math.ceil(size / 16) * 16), usage: usage | GPUBufferUsage.COPY_DST });
+      var b = { coeffs: buf(coeffs.byteLength, GPUBufferUsage.STORAGE), drawing: buf(16, GPUBufferUsage.STORAGE) };
+      d.queue.writeBuffer(b.coeffs, 0, coeffs);
+      var pipelines = {}, tex = null, bind = null;
+      var ensure = (k, size, usage) => { if (!b[k] || b[k].size < size) { b[k]?.destroy(); b[k] = buf(size, usage); bind = null; } };
+      return {
+        module,
+        render(source, w, h, params, matrices, mesh, view) {
+          var pi = new Int32Array(params.buffer, params.byteOffset, params.byteLength >> 2);
+          pi[9] &= ~8; // no overlay drawing buffer
+          if (!tex || tex.width != w || tex.height != h) {
+            tex?.destroy();
+            tex = d.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+            bind = null;
+          }
+          ensure('params', params.byteLength, GPUBufferUsage.UNIFORM);
+          ensure('matrices', matrices.byteLength, GPUBufferUsage.STORAGE);
+          ensure('mesh', Math.max(4096, mesh.byteLength), GPUBufferUsage.STORAGE);
+          d.queue.writeBuffer(b.params, 0, params);
+          d.queue.writeBuffer(b.matrices, 0, matrices);
+          if (mesh.byteLength) d.queue.writeBuffer(b.mesh, 0, mesh);
+          bind ??= d.createBindGroup({ layout, entries: [
+            ...['params', 'matrices', 'coeffs', 'mesh', 'drawing'].map((k, i) => ({ binding: i, resource: { buffer: b[k] } })), { binding: 5, resource: tex.createView() },
+          ] });
+          d.queue.copyExternalImageToTexture({ source }, { texture: tex }, [w, h]);
+          var key = pi[7] + ':' + pi[9];
+          pipelines[key] ??= d.createRenderPipeline({
+            layout: d.createPipelineLayout({ bindGroupLayouts: [layout] }),
+            vertex: { module, entryPoint: 'undistort_vertex' },
+            fragment: { module, entryPoint: 'undistort_fragment', targets: [{ format: 'rgba8unorm' }], constants: { 100: pi[7], 101: 4, 102: 4, 103: pi[9] } },
+            primitive: { topology: 'triangle-strip' },
+          });
+          var enc = d.createCommandEncoder();
+          var pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
+          pass.setPipeline(pipelines[key]);
+          pass.setBindGroup(0, bind);
+          pass.draw(6);
+          pass.end();
+          d.queue.submit([enc.finish()]);
+        },
+      };
+    },
+    encode(e, f) {
+      e.encoder.encode(f, { keyFrame: e.n++ % e.cfg.keyint == 0 });
+      f.close();
+    },
     reader: null,
 
     // ---- /web mount (legacy FS runs on the browser main thread; pthread syscalls are proxied there) ----
@@ -177,7 +235,7 @@ addToLibrary({
     s.decoder = new VideoDecoder({
       output: (f) => {
         if (s.closed || !inRange(f.timestamp)) { f.close(); kick(); return; }
-        if (mode == 1) { s.frames.push(f); kick(); return; }
+        if (mode == 1) { s.frames.push(f); var c = s.consumer; s.consumer = null; c?.(); return; }
         ctx.drawImage(f, 0, 0, canvas.width, canvas.height);
         f.close();
         var img = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
@@ -215,6 +273,7 @@ addToLibrary({
       } catch (e) { s.error = s.error || e; console.error('gfweb decode:', e); }
       s.done = true;
       console.log(`gfweb: decode session done (${s.error ? 'error: ' + s.error : 'ok'})`);
+      var c = s.consumer; s.consumer = null; c?.();
       if (mode == 0 && !s.closed) deliver(-1, 0, 0, 0, 0);
       kick();
     })();
@@ -233,7 +292,7 @@ addToLibrary({
   // mode 1: upload the next decoded frame into GL texture `tex`. Returns its pts in us, -1 if none is ready yet,
   // -2 when the stream is finished, -3 on a decoder error.
   gf_dec_upload__deps: ['$GFWEB', '$GL'],
-  gf_dec_upload: (id, tex) => {
+  gf_dec_upload: (id, tex, flipY) => {
     var s = GFWEB.decoders[id];
     if (!s) return -2;
     if (s.error) return -3;
@@ -241,16 +300,161 @@ addToLibrary({
     if (!f) return s.done ? -2 : -1;
     var gl = GLctx;
     gl.bindTexture(gl.TEXTURE_2D, GL.textures[tex]);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, !!flipY);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, f);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.BROWSER_DEFAULT_WEBGL);
     gl.bindTexture(gl.TEXTURE_2D, null);
     var ts = f.timestamp;
     f.close();
     s.wake?.();
     return ts;
+  },
+
+  // Presentation time (us) of the next decoded frame without consuming it; -1 none yet, -2 finished, -3 error
+  gf_dec_peek__deps: ['$GFWEB'],
+  gf_dec_peek: (id) => {
+    var s = GFWEB.decoders[id];
+    if (!s) return -2;
+    if (s.error) return -3;
+    return s.frames.length ? s.frames[0].timestamp : (s.done ? -2 : -1);
+  },
+
+  // ---- export: WebCodecs encoder + MP4 download sink (the muxer itself is Rust, web_export.rs) ----
+  // cfg: { family: 'avc'|'hevc', width, height, bitrate, fps, keyint }. Encoded chunks go to the job's blob parts,
+  // their sizes/flags to gf_export_chunk() so Rust can write the sample tables.
+  gf_export_start__deps: ['$GFWEB', '$UTF8ToString', '$stringToNewUTF8', 'malloc', 'gf_export_chunk', 'gf_export_config', 'gf_export_error'],
+  gf_export_start__proxy: 'sync',
+  gf_export_start: (job, cfgPtr) => {
+    var cfg = JSON.parse(UTF8ToString(cfgPtr));
+    var e = { cfg, parts: [], pending: [], encoder: null, ready: false, n: 0, failed: false };
+    GFWEB.exports[job] = e;
+    var fail = (msg) => { if (e.failed) return; e.failed = true; console.error('gfweb export:', msg); var p = stringToNewUTF8(String(msg)); _gf_export_error(job, p); };
+    e.encoder = new VideoEncoder({
+      output: (chunk, meta) => {
+        var desc = meta?.decoderConfig?.description;
+        if (desc) {
+          var d = new Uint8Array(desc instanceof ArrayBuffer ? desc : desc.buffer, desc.byteOffset || 0, desc.byteLength);
+          var p = _malloc(d.length); HEAPU8.set(d, p); _gf_export_config(job, p, d.length);
+        }
+        var data = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(data);
+        e.parts.push(data);
+        _gf_export_chunk(job, data.length, chunk.type == 'key' ? 1 : 0);
+      },
+      error: (err) => fail(err.message || err),
+    });
+    var candidates = cfg.family == 'hevc'
+      ? ['hvc1.1.6.L156.B0', 'hvc1.1.6.L153.B0', 'hvc1.1.6.L150.B0', 'hvc1.1.6.L123.B0']
+      : ['avc1.640034', 'avc1.640033', 'avc1.640032', 'avc1.640028'];
+    (async () => {
+      for (var hw of ['prefer-hardware', 'no-preference']) for (var codec of candidates) {
+        var c = { codec, width: cfg.width, height: cfg.height, bitrate: cfg.bitrate, framerate: cfg.fps, hardwareAcceleration: hw, latencyMode: 'quality',
+                  ...(cfg.family == 'hevc' ? { hevc: { format: 'hevc' } } : { avc: { format: 'avc' } }) };
+        try { if (!(await VideoEncoder.isConfigSupported(c)).supported) continue; } catch (err) { continue; }
+        console.log(`gfweb: encoding ${codec} ${cfg.width}x${cfg.height} @ ${cfg.fps} fps, ${Math.round(cfg.bitrate / 1e6)} Mbps (${hw})`);
+        e.encoder.configure(c);
+        e.ready = true;
+        e.pending.forEach((x) => GFWEB.encode(e, x));
+        e.pending = [];
+        return;
+      }
+      fail(`This browser can't encode ${cfg.family.toUpperCase()} at ${cfg.width}x${cfg.height}`);
+    })();
+  },
+  // Called on the main thread with the processed RGBA frame (copied, so the wasm buffer can be reused)
+  gf_export_encode__deps: ['$GFWEB'],
+  gf_export_encode: (job, ptr, len, w, h, ts, dur) => {
+    var e = GFWEB.exports[job];
+    if (!e || e.failed) return;
+    var f = new VideoFrame(HEAPU8.slice(ptr, ptr + len), { format: 'RGBA', codedWidth: w, codedHeight: h, timestamp: ts, duration: dur });
+    if (e.ready) GFWEB.encode(e, f); else e.pending.push(f);
+  },
+  // The export GPU loop: decoded VideoFrame -> 2D canvas (same RGB values as ffmpeg, see gfUpload) -> WebGPU texture ->
+  // wgpu_undistort.wgsl with gyroflow-core's per-frame params -> WebGPU canvas -> VideoFrame -> encoder. No readback.
+  gf_export_run__deps: ['$GFWEB', '$UTF8ToString', 'malloc', 'gf_export_frame_params', 'gf_export_rendered', 'gf_export_flush'],
+  gf_export_run__proxy: 'sync',
+  gf_export_run: (job, shaderPtr, coeffsPtr, nCoeffs, inW, inH, outW, outH, frameDur) => {
+    var e = GFWEB.exports[job], s = GFWEB.decoders[job];
+    var code = UTF8ToString(shaderPtr).replace(/@fragment var/g, 'var'); // naga-only per-stage var attributes
+    var coeffs = HEAPF32.slice(coeffsPtr >> 2, (coeffsPtr >> 2) + nCoeffs);
+    var paramsOut = _malloc(24);
+    var fail = () => _gf_export_rendered(job, 0, 1);
+    (async () => {
+      try {
+        var gpu = await GFWEB.gpuDevice();
+        var u = GFWEB.undistort(gpu, code, coeffs);
+        var errs = (await u.module.getCompilationInfo()).messages.filter((m) => m.type == 'error');
+        if (errs.length) throw new Error('WGSL: ' + errs.map((m) => m.lineNum + ': ' + m.message).join('\n'));
+        var src = new OffscreenCanvas(inW, inH), src2d = src.getContext('2d', { alpha: false });
+        var out = new OffscreenCanvas(outW, outH), ctx = out.getContext('webgpu');
+        ctx.configure({ device: gpu, format: 'rgba8unorm', alphaMode: 'opaque' });
+        var n = 0, t0 = performance.now();
+        for (;;) {
+          while (!s.frames.length && !s.done && !s.error && !e.failed) await new Promise((r) => { s.consumer = r; setTimeout(r, 50); });
+          if (e.failed) return;
+          if (s.error) return fail();
+          var f = s.frames.shift();
+          s.wake?.();
+          if (!f) break;
+          if (!_gf_export_frame_params(job, f.timestamp, paramsOut)) { f.close(); return fail(); }
+          var p = HEAPU32.subarray(paramsOut >> 2, (paramsOut >> 2) + 6);
+          src2d.drawImage(f, 0, 0, inW, inH);
+          f.close();
+          u.render(src, inW, inH, HEAPU8.slice(p[0], p[0] + p[1]), HEAPU8.slice(p[2], p[2] + p[3]), HEAPU8.slice(p[4], p[4] + p[5]), ctx.getCurrentTexture().createView());
+          var vf = new VideoFrame(out, { timestamp: Math.round(n * frameDur), duration: Math.round(frameDur) });
+          n++;
+          while (e.encoder.state == 'configured' && e.encoder.encodeQueueSize > 4) await new Promise((r) => e.encoder.addEventListener('dequeue', r, { once: true }));
+          if (e.ready) GFWEB.encode(e, vf); else e.pending.push(vf);
+          _gf_export_rendered(job, 0, 0);
+        }
+        console.log(`gfweb: processed ${n} frames in ${((performance.now() - t0) / 1000).toFixed(1)} s (${(n / (performance.now() - t0) * 1000).toFixed(1)} fps)`);
+        _gf_export_flush(job);
+        _gf_export_rendered(job, 1, 0);
+      } catch (err) { console.error('gfweb export:', err); fail(); }
+    })();
+  },
+  // Frames the encoder hasn't consumed yet (C++ stops feeding above a few)
+  gf_export_backlog__deps: ['$GFWEB'],
+  gf_export_backlog: (job) => { var e = GFWEB.exports[job]; return e ? e.pending.length + (e.encoder.state == 'configured' ? e.encoder.encodeQueueSize : 0) : 0; },
+  gf_export_flush__deps: ['$GFWEB', 'gf_export_done'],
+  gf_export_flush: (job) => {
+    var e = GFWEB.exports[job];
+    if (!e) return;
+    var wait = () => e.ready || e.failed ? Promise.resolve() : new Promise((r) => setTimeout(() => wait().then(r), 20));
+    wait().then(() => e.failed ? null : e.encoder.flush()).then(() => { if (!e.failed) _gf_export_done(job); }, (err) => { console.error(err); });
+  },
+  gf_export_cancel__deps: ['$GFWEB'],
+  gf_export_cancel__proxy: 'async',
+  gf_export_cancel: (job) => {
+    var e = GFWEB.exports[job];
+    if (!e) return;
+    e.failed = true;
+    if (e.encoder.state != 'closed') e.encoder.close();
+    delete GFWEB.exports[job];
+  },
+  // Extra mdat payload (audio samples read by Rust)
+  gf_sink_write__deps: ['$GFWEB'],
+  gf_sink_write__proxy: 'sync',
+  gf_sink_write: (job, ptr, len) => { GFWEB.exports[job]?.parts.push(HEAPU8.slice(ptr, ptr + len)); },
+  // header = ftyp + mdat header, moov at the end; downloads the file
+  gf_sink_finish__deps: ['$GFWEB', '$UTF8ToString'],
+  gf_sink_finish__proxy: 'sync',
+  gf_sink_finish: (job, hPtr, hLen, mPtr, mLen, namePtr) => {
+    var e = GFWEB.exports[job];
+    if (!e) return;
+    var blob = new Blob([HEAPU8.slice(hPtr, hPtr + hLen), ...e.parts, HEAPU8.slice(mPtr, mPtr + mLen)], { type: 'video/mp4' });
+    delete GFWEB.exports[job];
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = UTF8ToString(namePtr);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    console.log(`gfweb: exported ${a.download} (${(blob.size / 1048576).toFixed(1)} MB)`);
   },
 
   // ---- <video> backend for qml-video-rs ----
