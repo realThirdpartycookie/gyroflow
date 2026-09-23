@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, height=device-height, user-scalable=0">
+  <title>Gyroflow</title>
+  <link rel="icon" href="icon.svg">
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #191919; color: #fff; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    #screen { position: fixed; inset: 0; }
+    #loader { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: #1e1e1e; transition: opacity .35s ease; }
+    #loader.done { opacity: 0; pointer-events: none; }
+    #box { width: min(420px, 80vw); display: grid; gap: 22px; justify-items: center; }
+    #box img { width: 100%; }
+    #track { width: 100%; height: 4px; border-radius: 2px; background: #2e2e2e; overflow: hidden; }
+    #bar { width: 0; height: 100%; background: #76baed; transition: width .15s linear; }
+    #row { width: 100%; display: flex; justify-content: space-between; color: #949494; font-size: 13px; font-variant-numeric: tabular-nums; }
+    #error { color: #f67575; text-align: center; white-space: pre-wrap; display: none; }
+  </style>
+</head>
+<body>
+  <div id="screen"></div>
+  <div id="loader">
+    <div id="box">
+      <img src="logo_white.svg" alt="Gyroflow">
+      <div id="track"><div id="bar"></div></div>
+      <div id="row"><span id="stage">Loading…</span><span id="pct">0%</span></div>
+      <div id="error"></div>
+    </div>
+  </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const progress = (fraction, stage) => {
+      const p = Math.max(0, Math.min(100, Math.floor(fraction * 100)));
+      $('bar').style.width = p + '%';
+      $('pct').textContent = p + '%';
+      if (stage) $('stage').textContent = stage;
+    };
+    const fail = (text) => {
+      $('error').style.display = 'block';
+      $('error').textContent = text;
+      $('track').style.display = $('row').style.display = 'none';
+    };
+    const mb = (b) => (b / 1048576).toFixed(1);
+
+    // Compile the module while it downloads, reporting bytes: 0-90% download, then compile, start
+    async function compileWithProgress(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+      const total = +res.headers.get('Content-Length') || 0;
+      let loaded = 0;
+      const reader = res.body.getReader();
+      const body = new ReadableStream({
+        async pull(ctl) {
+          const { done, value } = await reader.read();
+          if (done) { ctl.close(); progress(0.9, 'Compiling…'); return; }
+          loaded += value.length;
+          if (total) progress(0.9 * loaded / total, `Downloading ${mb(loaded)} / ${mb(total)} MB`);
+          ctl.enqueue(value);
+        },
+      });
+      return WebAssembly.compileStreaming(new Response(body, { headers: { 'Content-Type': 'application/wasm' } }));
+    }
+
+    // Called by Gyroflow (gyroflow.rs) right before its event loop starts
+    globalThis.gfReady = () => {
+      progress(1, 'Ready');
+      requestAnimationFrame(() => requestAnimationFrame(() => $('loader').classList.add('done')));
+    };
+
+    async function init() {
+      if (!self.crossOriginIsolated) return fail('This page must be served with Cross-Origin-Opener-Policy: same-origin and\nCross-Origin-Embedder-Policy: require-corp (Gyroflow needs threads).');
+      if (!document.createElement('canvas').getContext('webgl2')) return fail('WebGL 2 is not available in this browser.');
+      try {
+        await qtLoad({
+          qt: {
+            module: compileWithProgress('gyroflow.wasm'),
+            onLoaded: () => progress(0.95, 'Starting Gyroflow…'),
+            onExit: (e) => { $('loader').classList.remove('done'); fail(`Gyroflow exited${e.code !== undefined ? ' with code ' + e.code : ''}${e.text ? ':\n' + e.text : ''}`); },
+            entryFunction: window.gyroflow_entry,
+            containerElements: [$('screen')],
+          },
+        });
+      } catch (e) {
+        console.error(e);
+        fail('Failed to load Gyroflow:\n' + (e.message || e));
+      }
+    }
+  </script>
+  <script src="gyroflow.js"></script>
+  <script src="qtloader.js"></script>
+  <script>init();</script>
+</body>
+</html>

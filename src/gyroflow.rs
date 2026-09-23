@@ -260,6 +260,11 @@ fn entry() {
         engine.set_property("defaultInitializedDevice".into(), QString::from(list_name).into());
     }
 
+    #[cfg(target_os = "emscripten")]
+    unsafe { // hide the page's loading screen (src/web/index.html)
+        unsafe extern "C" { fn emscripten_run_script(script: *const std::ffi::c_char); }
+        emscripten_run_script(c"globalThis.gfReady?.()".as_ptr());
+    }
     engine.exec();
 
     util::unregister_url_handlers();
