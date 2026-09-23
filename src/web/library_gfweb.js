@@ -504,6 +504,7 @@ addToLibrary({
     if (p.url) URL.revokeObjectURL(p.url);
     p.url = f ? URL.createObjectURL(f) : null;
     p.time = -1;
+    p.rot = undefined;
     p.v.src = p.url || s;
   },
   gf_video_play__deps: ['$GFWEB'],
@@ -527,20 +528,34 @@ addToLibrary({
   gf_video_get__deps: ['$GFWEB'],
   gf_video_get: (h, what) => {
     var v = GFWEB.players[h].v;
-    return [v.muted ? 1 : 0, v.volume, v.playbackRate, v.currentTime, v.duration || 0, v.videoWidth, v.videoHeight, v.paused ? 1 : 0][what];
+    var p = GFWEB.players[h];
+    return [v.muted ? 1 : 0, v.volume, v.playbackRate, v.currentTime, v.duration || 0, v.videoWidth, v.videoHeight, v.paused ? 1 : 0, p.tw || 0, p.th || 0][what];
   },
   // Copies the current video frame into GL texture `tex` (GPU to GPU, the browser's hardware decoder output).
   // Colour-space conversion is off so RGB values match ffmpeg/desktop Gyroflow. Returns the frame's time in s, or -1.
   gf_video_upload__deps: ['$GFWEB', '$GL'],
   gf_video_upload: (h, tex) => {
-    var p = GFWEB.players[h];
-    if (!p || p.v.readyState < 2) return -1;
+    var p = GFWEB.players[h], v = p?.v;
+    if (!p || v.readyState < 2) return -1;
+    // The browser presents frames with the container rotation applied; Gyroflow wants them sensor-oriented (as MDK
+    // delivers them) and applies the rotation itself, so rotate them back.
+    if (p.rot === undefined) { try { var vf = new VideoFrame(v); p.rot = vf.rotation || 0; vf.close(); } catch (e) { p.rot = 0; } }
+    var src = v, swap = p.rot % 180 != 0;
+    p.tw = swap ? v.videoHeight : v.videoWidth;
+    p.th = swap ? v.videoWidth : v.videoHeight;
+    if (p.rot) {
+      if (!p.cv || p.cv.width != p.tw || p.cv.height != p.th) { p.cv = new OffscreenCanvas(p.tw, p.th); p.cx = p.cv.getContext('2d', { alpha: false }); }
+      p.cx.setTransform(1, 0, 0, 1, p.tw / 2, p.th / 2);
+      p.cx.rotate(-p.rot * Math.PI / 180);
+      p.cx.drawImage(v, -v.videoWidth / 2, -v.videoHeight / 2);
+      src = p.cv;
+    }
     var gl = GLctx;
     gl.bindTexture(gl.TEXTURE_2D, GL.textures[tex]);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, p.v);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, src);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.BROWSER_DEFAULT_WEBGL);
     gl.bindTexture(gl.TEXTURE_2D, null);
     return p.time >= 0 ? p.time : p.v.currentTime;
