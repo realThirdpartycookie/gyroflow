@@ -153,10 +153,10 @@ impl UITools {
     }
 
     pub fn set_icon(&mut self, wnd: QJSValue) {
-        let hwnd = cpp!(unsafe [wnd as "QJSValue"] -> isize as "int64_t" {
+        let hwnd = cpp!(unsafe [wnd as "QJSValue"] -> isize as "intptr_t" {
             auto obj = qobject_cast<QQuickWindow *>(wnd.toQObject());
             obj->setIcon(QIcon(":/resources/icon.png"));
-            return int64_t(obj->winId());
+            return intptr_t(obj->winId());
         });
         if self.main_window_handle.is_none() {
             self.main_window_handle = Some(hwnd);

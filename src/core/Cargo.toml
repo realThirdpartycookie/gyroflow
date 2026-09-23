@@ -50,7 +50,7 @@ thiserror = "2.0.20"
 ciborium = "0.2.2"
 dyn-clone = "1.0"
 app_dirs2 = { git = "https://github.com/app-dirs-rs/app_dirs2.git", version = "2.5" }
-whoami = "2.1"
+whoami = { version = "2.1", default-features = false, features = ["std"] } # wasm-web feature needs wasm-bindgen, breaks emscripten
 
 akaze = { version = "*", git = "https://github.com/rust-cv/cv.git", rev = "d271a9a", features = ["rayon"] }
 eight-point = { version = "*", git = "https://github.com/rust-cv/cv.git", rev = "d271a9a" }

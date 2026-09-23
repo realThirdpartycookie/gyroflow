@@ -24,7 +24,7 @@ use crate::core::filesystem;
 use crate::rendering;
 use crate::util;
 use crate::wrap_simple_method;
-use crate::rendering::VideoProcessor;
+#[cfg(not(target_os = "emscripten"))] use crate::rendering::VideoProcessor;
 use crate::ui::components::TimelineGyroChart::TimelineGyroChart;
 use crate::ui::components::TimelineKeyframesView::TimelineKeyframesView;
 use crate::ui::components::FrequencyGraph::FrequencyGraph;
@@ -331,7 +331,9 @@ impl Controller {
         let filename = filesystem::get_filename(&url);
 
         // Load current (clean) state to the UI
-        if self.stabilizer.lens_calibrator.read().is_none() {
+        #[cfg(feature = "opencv")] let no_calib = self.stabilizer.lens_calibrator.read().is_none();
+        #[cfg(not(feature = "opencv"))] let no_calib = true;
+        if no_calib {
             if let Ok(current_state) = self.stabilizer.export_gyroflow_data(core::GyroflowProjectType::Simple, "{}", None) {
                 if let Ok(current_state) = serde_json::from_str(current_state.as_str()) as serde_json::Result<serde_json::Value> {
                     self.gyroflow_file_loaded(util::serde_json_to_qt_object(&current_state));
@@ -394,6 +396,9 @@ impl Controller {
         QString::from(self.stabilizer.input_file.read().project_file_url.as_ref().cloned().unwrap_or_default())
     }
 
+    #[cfg(target_os = "emscripten")]
+    fn start_autosync(&mut self, timestamps_fract: String, sync_params: String, mode: String) {  }
+    #[cfg(not(target_os = "emscripten"))]
     fn start_autosync(&mut self, timestamps_fract: String, sync_params: String, mode: String) {
         rendering::clear_log();
 
@@ -1610,6 +1615,9 @@ impl Controller {
         self.request_recompute();
     }
 
+    #[cfg(target_os = "emscripten")]
+    fn check_updates(&self) {  }
+    #[cfg(not(target_os = "emscripten"))]
     fn check_updates(&self) {
         let update = util::qt_queued_callback_mut(QPointer::from(self as &Self), |this, (version, changelog): (String, String)| {
             this.updates_available(QString::from(version), QString::from(changelog))
@@ -1917,6 +1925,7 @@ impl Controller {
                 match profile.save_to_file(&url) {
                     Ok(json) => {
                         ::log::debug!("Lens profile json: {}", json);
+                        #[cfg(not(target_os = "emscripten"))]
                         if upload {
                             core::run_threaded(move || {
                                 if let Ok(Ok(body)) = ureq::post("https://api.gyroflow.xyz/upload_profile").header("Content-Type", "application/json; charset=utf-8").send(&json).map(|x| x.into_body().read_to_string()) {
@@ -1980,6 +1989,9 @@ impl Controller {
     }
 
     #[allow(unreachable_code)]
+    #[cfg(target_os = "emscripten")]
+    fn fetch_profiles_from_github(&self) {  }
+    #[cfg(not(target_os = "emscripten"))]
     fn fetch_profiles_from_github(&self) {
         use crate::core::lens_profile_database::LensProfileDatabase;
 
@@ -2035,6 +2047,9 @@ impl Controller {
         }
     }
 
+    #[cfg(target_os = "emscripten")]
+    fn rate_profile(&self, name: QString, json: QString, checksum: QString, is_good: bool) {  }
+    #[cfg(not(target_os = "emscripten"))]
     fn rate_profile(&self, name: QString, json: QString, checksum: QString, is_good: bool) {
         core::run_threaded(move || {
             let mut url = url::Url::parse(&format!("https://api.gyroflow.xyz/rate?good={}&checksum={}", is_good, checksum)).unwrap();
@@ -2045,6 +2060,9 @@ impl Controller {
             }
         });
     }
+    #[cfg(target_os = "emscripten")]
+    fn request_profile_ratings(&self) {  }
+    #[cfg(not(target_os = "emscripten"))]
     fn request_profile_ratings(&self) {
         let update = util::qt_queued_callback_mut(QPointer::from(self as &Self), |this, _| {
             this.lens_profiles_updated(false);
@@ -2257,6 +2275,9 @@ impl Controller {
         crate::external_sdk::install(&filename, &sdkbase, progress);
     }
 
+    #[cfg(target_os = "emscripten")]
+    fn mp4_merge(&self, file_list: QStringList, output_folder: QUrl, output_filename: QString) {  }
+    #[cfg(not(target_os = "emscripten"))]
     fn mp4_merge(&self, file_list: QStringList, output_folder: QUrl, output_filename: QString) {
         let output_folder = util::qurl_to_encoded(output_folder);
         let output_filename = output_filename.to_string();
@@ -2438,6 +2459,9 @@ impl Controller {
     }
     // ---------- REDline conversion ----------
 
+    #[cfg(target_os = "emscripten")]
+    fn play_sound(&self, typ: String) {  }
+    #[cfg(not(target_os = "emscripten"))]
     fn play_sound(&self, typ: String) {
         core::run_threaded(move || {
             use std::io::{ Cursor, Error, ErrorKind };
@@ -2614,6 +2638,9 @@ impl Filesystem {
         }
     }
 
+    #[cfg(target_os = "emscripten")]
+    fn move_to_trash(&self, url: QUrl) {  }
+    #[cfg(not(target_os = "emscripten"))]
     fn move_to_trash(&self, url: QUrl) {
         #[cfg(any(target_os = "android", target_os = "ios"))]
         {

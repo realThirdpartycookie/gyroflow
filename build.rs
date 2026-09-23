@@ -242,7 +242,12 @@ fn main() {
             res.set("FileDescription", &format!("Gyroflow v{}", env!("CARGO_PKG_VERSION")));
             res.compile().unwrap();
         }
+        "emscripten" => { } // Qt wasm link args come from QT_WASM_LINK_ARGS below
         tos => panic!("unknown target os {:?}!", tos)
+    }
+
+    if let Ok(f) = std::env::var("QT_WASM_LINK_ARGS") {
+        for a in std::fs::read_to_string(f).unwrap().lines().filter(|l| !l.is_empty()) { println!("cargo:rustc-link-arg={a}"); }
     }
 
     if let Ok(link_paths) = std::env::var("EXTRA_LINK_PATHS") && !link_paths.is_empty() {

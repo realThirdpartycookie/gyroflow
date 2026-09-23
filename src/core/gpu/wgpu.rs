@@ -65,9 +65,16 @@ impl Drop for WgpuWrapper {
     }
 }
 
+// ponytail: wasm+atomics makes wgpu types !Send/!Sync; this unsafely asserts it (only valid if wgpu stays on one thread). Proper fix: keep wgpu on a dedicated thread.
+pub struct Fragile<T>(pub T);
+#[cfg(target_os = "emscripten")] unsafe impl<T> Send for Fragile<T> {}
+#[cfg(target_os = "emscripten")] unsafe impl<T> Sync for Fragile<T> {}
+impl<T> std::ops::Deref for Fragile<T> { type Target = T; fn deref(&self) -> &T { &self.0 } }
+#[cfg(target_os = "emscripten")] unsafe impl Send for WgpuWrapper {}
+
 lazy_static::lazy_static! {
-    static ref INSTANCE: Mutex<wgpu::Instance> = Mutex::new(wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle()));
-    static ref ADAPTERS: RwLock<Vec<Adapter>> = RwLock::new(Vec::new());
+    static ref INSTANCE: Fragile<Mutex<wgpu::Instance>> = Fragile(Mutex::new(wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle())));
+    static ref ADAPTERS: Fragile<RwLock<Vec<Adapter>>> = Fragile(RwLock::new(Vec::new()));
     static ref ADAPTER: AtomicUsize = AtomicUsize::new(0);
 }
 

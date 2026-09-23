@@ -6,7 +6,7 @@
 
 use crate::gpu::{ BufferDescription, BufferSource };
 
-#[cfg(not(any(target_os = "macos", target_os = "ios")))] use { super::wgpu_interop_vulkan::*, ash::vk };
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "emscripten")))] use { super::wgpu_interop_vulkan::*, ash::vk };
 #[cfg(any(target_os = "windows", target_os = "linux"))]  use super::wgpu_interop_cuda::*;
 #[cfg(any(target_os = "macos", target_os = "ios"))]      use super::wgpu_interop_metal::*;
 #[cfg(target_os = "windows")]                            use { super::wgpu_interop_directx::*, windows::{ Win32::Graphics::Direct3D11::*, core::Interface } };
@@ -223,7 +223,7 @@ pub fn init_texture(device: &wgpu::Device, backend: wgpu::Backend, buf: &BufferD
                 }
             }
         },
-        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "emscripten")))]
         BufferSource::Vulkan { texture, device: vk_device, instance, .. } => {
             use ash::vk::Handle;
 
@@ -326,7 +326,7 @@ pub fn handle_input_texture(device: &wgpu::Device, buf: &BufferDescription, queu
                 );
             }
         },
-        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "emscripten")))]
         BufferSource::Vulkan { texture, .. } => {
             if buf.texture_copy {
                 use ash::vk::Handle;
@@ -407,7 +407,7 @@ pub fn handle_output_texture(device: &wgpu::Device, buf: &BufferDescription, _qu
                 );
             }
         },
-        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "emscripten")))]
         BufferSource::Vulkan { texture, .. } => {
             if buf.texture_copy {
                 use ash::vk::Handle;
@@ -478,7 +478,7 @@ pub fn handle_output_texture_post(device: &wgpu::Device, buf: &BufferDescription
             }
             super::wgpu_interop_cuda::cuda_synchronize();
         },
-        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "emscripten")))]
         BufferSource::Vulkan { .. } => {
             let _ = device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
         },

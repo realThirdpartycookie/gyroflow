@@ -12,11 +12,15 @@ use std::cell::RefCell;
 pub use gyroflow_core as core;
 pub mod util;
 pub mod controller;
+#[cfg(not(target_os = "emscripten"))]
+pub mod rendering;
+#[cfg(target_os = "emscripten")] #[path = "rendering_wasm.rs"]
 pub mod rendering;
 pub mod external_sdk;
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 pub mod nle_plugins;
-mod cli;
+#[cfg(not(target_os = "emscripten"))] mod cli;
+#[cfg(target_os = "emscripten")] mod cli { pub fn run(_: &mut String, _: &mut String) -> bool { false } }
 mod resources;
 #[cfg(not(compiled_qml))]
 mod resources_qml;
@@ -29,6 +33,7 @@ use ui::components::FrequencyGraph::FrequencyGraph;
 use ui::components::Settings::Settings;
 use ui::ui_tools::UITools;
 
+#[cfg(not(target_os = "emscripten"))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -249,6 +254,7 @@ fn entry() {
     engine.set_property("loadPresetOnStart".into(), QString::from(open_preset).into());
 
     engine.set_property("defaultInitializedDevice".into(), QString::default().into());
+    #[cfg(not(target_os = "emscripten"))] // wgpu GLES/EGL has no canvas under Qt wasm; CPU path only
     if let Some((name, list_name)) = core::gpu::initialize_contexts() {
         rendering::set_gpu_type_from_name(&name);
         engine.set_property("defaultInitializedDevice".into(), QString::from(list_name).into());

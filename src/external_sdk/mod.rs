@@ -49,6 +49,9 @@ pub fn requires_install(filename: &str) -> bool {
     false
 }
 
+#[cfg(target_os = "emscripten")]
+pub fn install<F: Fn((f64, &'static str, String)) + Send + Sync + Clone + 'static>(filename: &str,sdkbase: &str,cb: F) {  }
+#[cfg(not(target_os = "emscripten"))]
 pub fn install<F: Fn((f64, &'static str, String)) + Send + Sync + Clone + 'static>(filename: &str,sdkbase: &str,cb: F) {
     let (url, sdk_name) = if filename.to_lowercase().ends_with(".braw") {
         (braw::BrawSdk::get_download_url(sdkbase), "Blackmagic RAW SDK")

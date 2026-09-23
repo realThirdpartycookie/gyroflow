@@ -6,7 +6,7 @@ pub mod opencl;
 pub mod wgpu;
 
 pub mod wgpu_interop;
-#[cfg(not(any(target_os = "macos", target_os = "ios")))] pub mod wgpu_interop_vulkan;
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "emscripten")))] pub mod wgpu_interop_vulkan;
 #[cfg(any(target_os = "macos", target_os = "ios"))]      pub mod wgpu_interop_metal;
 #[cfg(target_os = "windows")]                            pub mod wgpu_interop_directx;
 #[cfg(any(target_os = "windows", target_os = "linux"))]  pub mod wgpu_interop_cuda;

@@ -279,6 +279,9 @@ pub fn init_logging() {
     });
 }
 
+#[cfg(target_os = "emscripten")]
+pub fn install_crash_handler() -> std::io::Result<()> { Ok(()) }
+#[cfg(not(target_os = "emscripten"))]
 pub fn install_crash_handler() -> std::io::Result<()> {
     let cur_dir = std::env::current_dir()?;
 
@@ -556,6 +559,9 @@ pub fn copy_insta360_metadata(output_url: &str, input_url: &str) -> Result<(), g
     Ok(())
 }
 
+#[cfg(target_os = "emscripten")]
+pub fn report_lens_profile_usage(checksum: Option<String>) {  }
+#[cfg(not(target_os = "emscripten"))]
 pub fn report_lens_profile_usage(checksum: Option<String>) {
     if let Some(checksum) = checksum {
         if !checksum.is_empty() {
