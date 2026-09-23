@@ -16,7 +16,24 @@ FileDialog {
         function onAccepted(): void { settings.setValue("folder-" + root.type, filesystem.get_folder(root.selectedFile).toString()); }
     }
 
+    // Browser build: Qt's dialog would only browse the in-memory FS, so open files through the browser's picker
+    property bool webPicking: false;
+    Connections {
+        target: filesystem;
+        enabled: root.webPicking;
+        function onWeb_files_picked(urls: var): void {
+            root.webPicking = false;
+            if (urls.length) { root.selectedFile = urls[0]; root.accepted(); } else { root.rejected(); }
+        }
+    }
+
     function open2(): void {
+        if (Qt.platform.os == "wasm" && root.fileMode != FileDialog.SaveFile) {
+            const exts = (root.nameFilters || []).join(" ").match(/\*\.\w+/g) || [];
+            root.webPicking = true;
+            filesystem.web_pick_files([...new Set(exts.map(x => x.substring(1).toLowerCase()))].join(","), root.fileMode == FileDialog.OpenFiles);
+            return;
+        }
         const savedFolder = settings.value("folder-" + type, "");
         if (savedFolder) currentFolder = savedFolder;
         open();

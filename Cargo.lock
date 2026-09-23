@@ -3400,6 +3400,7 @@ dependencies = [
  "cstr",
  "qmetaobject",
  "qttypes",
+ "telemetry-parser",
  "ureq",
 ]
 

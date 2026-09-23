@@ -82,6 +82,8 @@ const EXCLUSIONS: &[&'static str] = &["Microsoft Basic Render Driver"];
 
 impl WgpuWrapper {
     pub fn list_devices() -> Vec<String> {
+        // Browser build: GPU work goes through Qt RHI (WebGL2); wgpu's GL backend would try to create its own EGL context
+        if cfg!(target_os = "emscripten") { return Vec::new(); }
         if ADAPTERS.read().is_empty() {
             let devices = std::panic::catch_unwind(|| -> Vec<Adapter> {
                 pollster::block_on(INSTANCE.lock().enumerate_adapters(wgpu::Backends::all())).into_iter().filter(|x| !EXCLUSIONS.iter().any(|e| x.get_info().name.contains(e))).collect()
@@ -128,6 +130,7 @@ impl WgpuWrapper {
     }
 
     pub fn initialize_context() -> Option<(String, String)> {
+        if cfg!(target_os = "emscripten") { return None; }
         let instance = INSTANCE.lock();
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {

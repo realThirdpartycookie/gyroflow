@@ -2606,6 +2606,10 @@ pub struct Filesystem {
     restore_allowed_folders:  qt_method!(fn(&self)),
     get_next_file_url:        qt_method!(fn(&self, current_url: QUrl, index: i32) -> QUrl),
     url_opened:               qt_signal!(url: QUrl),
+
+    // Browser build: native file picker, files are then readable under /web/<n>/<name>
+    web_pick_files:           qt_method!(fn(&self, accept: QString, multiple: bool)),
+    web_files_picked:         qt_signal!(urls: QVariantList),
 }
 impl Filesystem {
     fn exists_in_folder(&self, folder: QUrl, filename: QString) -> bool { filesystem::exists_in_folder(&util::qurl_to_encoded(folder), &filename.to_string()) }
@@ -2622,6 +2626,15 @@ impl Filesystem {
     fn display_url(&self, url: QUrl) -> QString { QString::from(filesystem::display_url(&util::qurl_to_encoded(url))) }
     fn display_folder_filename(&self, folder: QUrl, filename: QString) -> QString { QString::from(filesystem::display_folder_filename(&util::qurl_to_encoded(folder), &filename.to_string())) }
     fn catch_url_open(&self, url: QUrl) { util::dispatch_url_event(url.clone()); self.url_opened(url); }
+    #[cfg(target_os = "emscripten")]
+    fn web_pick_files(&self, accept: QString, multiple: bool) {
+        unsafe extern "C" { fn gf_web_pick_files(accept: *const std::ffi::c_char, multiple: i32, cb_id: i32); }
+        WEB_PICKER.store(self as *const Self as *mut Self, SeqCst); // the pinned QML singleton, lives for the whole app
+        let accept = std::ffi::CString::new(accept.to_string()).unwrap_or_default();
+        unsafe { gf_web_pick_files(accept.as_ptr(), multiple as i32, 0); }
+    }
+    #[cfg(not(target_os = "emscripten"))]
+    fn web_pick_files(&self, _accept: QString, _multiple: bool) { }
     fn remove_file(&self, url: QUrl) { let _ = filesystem::remove_file(&util::qurl_to_encoded(url)); }
     fn folder_access_granted(&self, url: QUrl) { filesystem::folder_access_granted(&util::qurl_to_encoded(url)); }
     fn save_allowed_folders(&self) {
@@ -2681,4 +2694,18 @@ impl Filesystem {
         }
         QUrl::default()
     }
+}
+
+#[cfg(target_os = "emscripten")]
+static WEB_PICKER: std::sync::atomic::AtomicPtr<Filesystem> = std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
+
+/// Called by library_gfweb.js (browser main thread) with a JSON array of picked /web paths (malloc'd, freed here).
+#[cfg(target_os = "emscripten")]
+#[unsafe(no_mangle)]
+pub extern "C" fn gf_web_files_picked(_cb_id: i32, json: *mut std::ffi::c_char) {
+    unsafe extern "C" { fn free(p: *mut std::ffi::c_void); }
+    let paths: Vec<String> = serde_json::from_str(&unsafe { std::ffi::CStr::from_ptr(json) }.to_string_lossy()).unwrap_or_default();
+    unsafe { free(json as *mut _); }
+    let urls: QVariantList = paths.iter().map(|p| QVariant::from(QUrl::from(QString::from(filesystem::path_to_url(p))))).collect();
+    if let Some(fs) = unsafe { WEB_PICKER.load(SeqCst).as_ref() } { fs.web_files_picked(urls); }
 }

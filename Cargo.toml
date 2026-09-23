@@ -26,7 +26,7 @@ fs_extra = "1.3"
 gyroflow-core = { path = "src/core/", features = ["use-opencv"] }
 
 [target.'cfg(target_os = "emscripten")'.dependencies]
-gyroflow-core = { path = "src/core/" }
+gyroflow-core = { path = "src/core/", features = ["bundle-lens-profiles"] }
 
 [target.'cfg(not(target_os = "emscripten"))'.dependencies]
 ffmpeg-next = { version = "9.0.0", default-features = false, features = ["codec", "filter", "format", "software-resampling", "software-scaling"] }

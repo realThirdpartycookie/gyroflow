@@ -572,7 +572,7 @@ impl Stabilization {
                     }
                 }
             }
-            if self.initialized_backend.is_none() && T::wgpu_format().is_some() && next_backend != "opencl" && std::env::var("NO_WGPU").unwrap_or_default().is_empty() && wgpu::is_buffer_supported(buffers) {
+            if self.initialized_backend.is_none() && T::wgpu_format().is_some() && next_backend != "opencl" && !cfg!(target_os = "emscripten") && std::env::var("NO_WGPU").unwrap_or_default().is_empty() && wgpu::is_buffer_supported(buffers) {
                 if self.share_wgpu_instances && CACHED_WGPU.with(|x| x.0.borrow().contains(&hash)) {
                     self.wgpu = None;
                     self.initialized_backend = BackendType::Wgpu(hash);

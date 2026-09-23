@@ -246,6 +246,11 @@ fn main() {
         tos => panic!("unknown target os {:?}!", tos)
     }
 
+    if target_os == "emscripten" {
+        let lib = format!("{}/src/web/library_gfweb.js", std::env::var("CARGO_MANIFEST_DIR").unwrap());
+        println!("cargo:rerun-if-changed={lib}");
+        println!("cargo:rustc-link-arg=--js-library={lib}");
+    }
     if let Ok(f) = std::env::var("QT_WASM_LINK_ARGS") {
         for a in std::fs::read_to_string(f).unwrap().lines().filter(|l| !l.is_empty()) { println!("cargo:rustc-link-arg={a}"); }
     }
