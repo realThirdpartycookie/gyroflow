@@ -34,6 +34,9 @@ MenuItem {
         if (Qt.platform.os == "android") { // We can't render sequences on Android because of file system restrictions
             list = list.filter(x => !x.name.includes("Sequence"));
         }
+        if (Qt.platform.os == "wasm") { // the browser encodes with WebCodecs: H.264 and H.265 only
+            list = list.slice(0, 2);
+        }
         // if (Qt.platform.os == "windows" || Qt.platform.os == "linux" || Qt.platform.os == "android") {
         //     list.push({ "name": "AV1", "max_size": [8192, 8192], "extension": ".mp4", "gpu": true, "audio": true, "variants": [ ] });
         // }

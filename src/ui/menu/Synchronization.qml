@@ -343,6 +343,7 @@ MenuItem {
                 font.pixelSize: 12 * dpiScale;
                 width: parent.width;
                 currentIndex: Qt.platform.os == "wasm"? 0 : 2; // the browser build has no OpenCV
+                enabled: Qt.platform.os != "wasm";
                 onCurrentIndexChanged: controller.set_of_method(currentIndex);
                 Component.onCompleted: currentIndexChanged();
             }
@@ -357,6 +358,7 @@ MenuItem {
                 font.pixelSize: 12 * dpiScale;
                 width: parent.width;
                 currentIndex: Qt.platform.os == "wasm"? 1 : 0; // findEssentialMat/findHomography need OpenCV
+                enabled: Qt.platform.os != "wasm";
                 onCurrentIndexChanged: controller.set_of_method(syncMethod.currentIndex);
             }
         }

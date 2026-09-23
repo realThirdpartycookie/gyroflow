@@ -1,0 +1,26 @@
+[package]
+name = "qml-video-rs"
+version = "0.1.0"
+authors = ["Adrian <adrian.eddy@gmail.com>"]
+edition = "2021"
+description = "Video player component for QML using Qt6 and mdk-sdk"
+readme = "README.md"
+build = "build.rs"
+
+[dependencies]
+qmetaobject = { version = "0.2.10", default-features = false, features = ["log"] }
+qttypes     = { version = "0.2.10", default-features = false, features = ["required", "qtquick", "qtquickcontrols2"] }
+cstr = "0.2"
+cpp = "0.5"
+
+[features]
+default = ["mdk-nightly"]
+mdk-nightly = []
+
+[target.'cfg(target_os = "emscripten")'.dependencies]
+telemetry-parser = { git = "https://github.com/AdrianEddy/telemetry-parser.git", rev = "d45ebf2" } # same rev as gyroflow-core
+mp4parse = { version = "0.17", git = "https://github.com/AdrianEddy/mp4parse-rust.git", features = ["unstable-api"] } # same as telemetry-parser's
+
+[build-dependencies]
+cpp_build = "0.5"
+ureq = "3.1"

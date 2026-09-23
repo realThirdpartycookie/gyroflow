@@ -257,6 +257,7 @@ MenuItem {
         }
         Button {
             text: qsTr("Create new");
+            visible: Qt.platform.os != "wasm"; // the calibrator needs OpenCV
             iconName: "plus";
             icon.width: 15 * dpiScale;
             icon.height: 15 * dpiScale;

@@ -94,6 +94,7 @@ TextField {
         anchors.right: parent.right;
         height: parent.height - 1 * dpiScale;
         text: "...";
+        visible: Qt.platform.os != "wasm"; // browser: output is a download, there is no folder to pick
         font.underline: false;
         font.pixelSize: 15 * dpiScale;
         onClicked: {

@@ -69,7 +69,18 @@
     };
 
     async function init() {
-      if (!self.crossOriginIsolated) return fail('This page must be served with Cross-Origin-Opener-Policy: same-origin and\nCross-Origin-Embedder-Policy: require-corp (Gyroflow needs threads).');
+      if (!self.crossOriginIsolated) {
+        // No COOP/COEP from the server (e.g. GitHub Pages): let coi-sw.js add them, then reload once
+        const reloaded = sessionStorage.getItem('gf-coi-reload');
+        if (!reloaded && navigator.serviceWorker) {
+          sessionStorage.setItem('gf-coi-reload', '1');
+          await navigator.serviceWorker.register('coi-sw.js');
+          await navigator.serviceWorker.ready;
+          return location.reload();
+        }
+        return fail('This page needs cross-origin isolation (Gyroflow uses threads), but it could not be enabled.\nTry a current Chrome or Edge, outside of private browsing.');
+      }
+      sessionStorage.removeItem('gf-coi-reload');
       if (!document.createElement('canvas').getContext('webgl2')) return fail('WebGL 2 is not available in this browser.');
       try {
         await qtLoad({

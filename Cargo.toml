@@ -82,10 +82,10 @@ chrono = "0.4"
 [patch.crates-io]
 qmetaobject = { git = "https://github.com/AdrianEddy/qmetaobject-rs.git", rev = "ff1e23d" }
 qttypes     = { git = "https://github.com/AdrianEddy/qmetaobject-rs.git", rev = "ff1e23d" }
-cpp_build = { path = "../patches/cpp_build" }
+cpp_build = { path = "_deployment/web/patches/cpp_build" }
 
 [patch."https://github.com/AdrianEddy/qml-video-rs.git"]
-qml-video-rs = { path = "../patches/qml-video-rs" }
+qml-video-rs = { path = "_deployment/web/patches/qml-video-rs" }
 
 [target.'cfg(target_os = "windows")'.dependencies.windows]
 version = "0.62"

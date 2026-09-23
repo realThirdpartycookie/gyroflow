@@ -1,3 +1,6 @@
+> **Unofficial browser build.** This fork runs Gyroflow's own Qt app in the browser via WebAssembly, WebGPU and WebCodecs.
+> **[Try it](https://realthirdpartycookie.github.io/gyroflow/)** · [how it works, limitations, building](_deployment/web/README.md) · not affiliated with the Gyroflow project.
+
 <p align="center">
   <h1 align="center">
     <a href="https://github.com/gyroflow/gyroflow#gh-light-mode-only">
