@@ -1,0 +1,5 @@
+[package]
+name = "ffmpeg-web-shim"
+version = "0.1.0"
+edition = "2021"
+description = "Browser build: the small ffmpeg-next API surface Gyroflow's shared code uses (no libav*); frames come from WebCodecs"

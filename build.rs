@@ -252,6 +252,7 @@ fn main() {
         println!("cargo:rustc-link-arg=--js-library={lib}");
     }
     if let Ok(f) = std::env::var("QT_WASM_LINK_ARGS") {
+        println!("cargo:rerun-if-changed={f}");
         for a in std::fs::read_to_string(f).unwrap().lines().filter(|l| !l.is_empty()) { println!("cargo:rustc-link-arg={a}"); }
     }
 

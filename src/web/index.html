@@ -79,6 +79,8 @@
             onExit: (e) => { $('loader').classList.remove('done'); fail(`Gyroflow exited${e.code !== undefined ? ' with code ' + e.code : ''}${e.text ? ':\n' + e.text : ''}`); },
             entryFunction: window.gyroflow_entry,
             containerElements: [$('screen')],
+            // wasm32 has 4 GB of memory in total; a rayon worker per core runs autosync's per-frame buffers out of it
+            environment: { RAYON_NUM_THREADS: String(Math.min(4, navigator.hardwareConcurrency || 4)) },
           },
         });
       } catch (e) {

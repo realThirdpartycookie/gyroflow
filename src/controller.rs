@@ -24,7 +24,7 @@ use crate::core::filesystem;
 use crate::rendering;
 use crate::util;
 use crate::wrap_simple_method;
-#[cfg(not(target_os = "emscripten"))] use crate::rendering::VideoProcessor;
+use crate::rendering::VideoProcessor;
 use crate::ui::components::TimelineGyroChart::TimelineGyroChart;
 use crate::ui::components::TimelineKeyframesView::TimelineKeyframesView;
 use crate::ui::components::FrequencyGraph::FrequencyGraph;
@@ -396,9 +396,6 @@ impl Controller {
         QString::from(self.stabilizer.input_file.read().project_file_url.as_ref().cloned().unwrap_or_default())
     }
 
-    #[cfg(target_os = "emscripten")]
-    fn start_autosync(&mut self, timestamps_fract: String, sync_params: String, mode: String) {  }
-    #[cfg(not(target_os = "emscripten"))]
     fn start_autosync(&mut self, timestamps_fract: String, sync_params: String, mode: String) {
         rendering::clear_log();
 

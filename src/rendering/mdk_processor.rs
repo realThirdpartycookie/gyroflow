@@ -19,6 +19,8 @@ pub struct MDKProcessor {
     format: ffmpeg_next::format::Pixel,
     pub custom_decoder: String,
     url: String,
+    /// Browser build: decode straight to this height ("scale" decoder option), frames are scaled on the GPU
+    scale_height: u32,
     pub on_frame_callback: Option<Box<dyn FnMut(i64, &mut frame::Video, Option<&mut frame::Video>, &mut Converter, &mut RateControl) -> Result<(), FFmpegError> + 'static>>,
 }
 impl Drop for MDKProcessor {
@@ -36,6 +38,7 @@ impl MDKProcessor {
         let mut format = ffmpeg_next::format::Pixel::RGBA;
         let filename = gyroflow_core::filesystem::get_filename(url);
 
+        let scale_height = decoder_options.as_ref().and_then(|x| x.get("scale")).and_then(|x| x.split('x').nth(1)?.parse().ok()).filter(|_| cfg!(target_os = "emscripten")).unwrap_or(0);
         let mut options: String = decoder_options.map(|x| x.into_iter().map(|x| format!("{}={}", x.0, x.1)).join(":")).unwrap_or_default();
         if !options.is_empty() { options.insert(0, ':'); }
 
@@ -53,6 +56,7 @@ impl MDKProcessor {
         Self {
             mdk,
             url: url.to_owned(),
+            scale_height,
             format,
             custom_decoder,
             on_frame_callback: None
@@ -71,7 +75,7 @@ impl MDKProcessor {
         let mut converter = Converter::default();
         let mut ffmpeg_frame = None;
         let format = self.format;
-        self.mdk.startProcessing(0, 0, 0, false, &self.custom_decoder, ranges_ms, move |frame_num, timestamp_ms, width, height, _org_width, _org_height, _fps, _duration_ms, _frame_count, data| {
+        self.mdk.startProcessing(0, 0, self.scale_height as usize, false, &self.custom_decoder, ranges_ms, move |frame_num, timestamp_ms, width, height, _org_width, _org_height, _fps, _duration_ms, _frame_count, data| {
             if frame_num == -1 || data.is_empty() {
                 let _ = tx.send(());
                 return true;

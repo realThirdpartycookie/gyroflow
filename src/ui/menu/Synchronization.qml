@@ -342,7 +342,7 @@ MenuItem {
                 model: ["AKAZE", "OpenCV (PyrLK)", "OpenCV (DIS)"];
                 font.pixelSize: 12 * dpiScale;
                 width: parent.width;
-                currentIndex: 2;
+                currentIndex: Qt.platform.os == "wasm"? 0 : 2; // the browser build has no OpenCV
                 onCurrentIndexChanged: controller.set_of_method(currentIndex);
                 Component.onCompleted: currentIndexChanged();
             }
@@ -356,7 +356,7 @@ MenuItem {
                 model: ["findEssentialMat", "Almeida", "EightPoint", "findHomography"];
                 font.pixelSize: 12 * dpiScale;
                 width: parent.width;
-                currentIndex: 0;
+                currentIndex: Qt.platform.os == "wasm"? 1 : 0; // findEssentialMat/findHomography need OpenCV
                 onCurrentIndexChanged: controller.set_of_method(syncMethod.currentIndex);
             }
         }

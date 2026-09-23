@@ -10,6 +10,7 @@ use qml_video_rs::video_item::MDKVideoItem;
 use std::cell::RefCell;
 
 pub use gyroflow_core as core;
+#[cfg(target_os = "emscripten")] extern crate ffmpeg_web as ffmpeg_next;
 pub mod util;
 pub mod controller;
 #[cfg(not(target_os = "emscripten"))]
@@ -20,7 +21,7 @@ pub mod external_sdk;
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 pub mod nle_plugins;
 #[cfg(not(target_os = "emscripten"))] mod cli;
-#[cfg(target_os = "emscripten")] mod cli { pub fn run(_: &mut String, _: &mut String) -> bool { false } }
+#[cfg(target_os = "emscripten")] mod cli { pub fn run(_: &mut String, _: &mut String) -> bool { false } pub fn will_run_in_console() -> bool { false } }
 mod resources;
 #[cfg(not(compiled_qml))]
 mod resources_qml;

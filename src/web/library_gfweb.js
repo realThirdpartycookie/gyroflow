@@ -17,6 +17,7 @@ addToLibrary({
     dirs: 0,
     files: [null],
     players: [null],
+    decoders: {},
     reader: null,
 
     // ---- /web mount (legacy FS runs on the browser main thread; pthread syscalls are proxied there) ----
@@ -140,7 +141,7 @@ addToLibrary({
   // ---- file picker ----
   gf_web_pick_files__deps: ['$GFWEB', '$UTF8ToString', '$stringToNewUTF8', 'gf_web_files_picked'],
   // Automation/test hook: register File objects exactly like the picker does, returns their /web paths
-  gf_web_pick_files__postset: 'globalThis.gfWebAddFiles = (files) => GFWEB.addFiles(files);',
+  gf_web_pick_files__postset: 'globalThis.gfWebAddFiles = (files) => GFWEB.addFiles(files); globalThis.gfHeapMB = () => Math.round(HEAPU8.length / 1048576);',
   gf_web_pick_files: (accept, multiple, cbId) => {
     var input = document.createElement('input');
     input.type = 'file';
@@ -151,6 +152,105 @@ addToLibrary({
     input.onchange = () => done(GFWEB.addFiles(input.files));
     input.oncancel = () => done([]);
     input.click();
+  },
+
+  // ---- WebCodecs decode sessions (frame processing: autosync/thumbnails -> CPU; export -> GL texture) ----
+  // samples: f64[n*4] = offset, size, pts_us, key (decode order); ranges: f64[n*2] us (empty = everything).
+  // mode 0: frames are scaled on the GPU (2D canvas) to outW x outH RGBA and handed to qvr_dec_frame(id, ...) until
+  //         qvr_dec_frame(id, -1); `backlog` (int32 in wasm memory) is the consumer's queue length, used for backpressure.
+  // mode 1: frames wait in a queue for gf_dec_upload() (export, GPU only).
+  gf_dec_open__deps: ['$GFWEB', '$UTF8ToString', 'malloc', 'qvr_dec_frame'],
+  gf_dec_open__proxy: 'sync',
+  gf_dec_open: (id, pathPtr, codecPtr, descPtr, descLen, codedW, codedH, samplesPtr, nSamples, rangesPtr, nRanges, mode, outW, outH, backlogPtr) => {
+    var file = GFWEB.fileByPath(UTF8ToString(pathPtr));
+    var samples = HEAPF64.slice(samplesPtr >> 3, (samplesPtr >> 3) + nSamples * 4);
+    var ranges = [];
+    for (var i = 0; i < nRanges; i++) ranges.push([HEAPF64[(rangesPtr >> 3) + i * 2], HEAPF64[(rangesPtr >> 3) + i * 2 + 1]]);
+    if (!ranges.length) ranges.push([-Infinity, Infinity]);
+    var s = { id, mode, outW, outH, backlogPtr, frames: [], done: false, closed: false, error: null, wake: null };
+    GFWEB.decoders[id] = s;
+    var kick = () => { var w = s.wake; s.wake = null; w?.(); };
+    var deliver = (ts, w, h, ptr, len) => _qvr_dec_frame(id, ts, w, h, ptr, len);
+    var inRange = (t) => ranges.some(([a, b]) => t >= a && t <= b);
+    var canvas = mode == 0 ? new OffscreenCanvas(outW || codedW, outH || codedH) : null;
+    var ctx = canvas?.getContext('2d', { willReadFrequently: true });
+    s.decoder = new VideoDecoder({
+      output: (f) => {
+        if (s.closed || !inRange(f.timestamp)) { f.close(); kick(); return; }
+        if (mode == 1) { s.frames.push(f); kick(); return; }
+        ctx.drawImage(f, 0, 0, canvas.width, canvas.height);
+        f.close();
+        var img = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        var ptr = _malloc(img.length);
+        HEAPU8.set(img, ptr);
+        deliver(f.timestamp, canvas.width, canvas.height, ptr, img.length);
+        kick();
+      },
+      error: (e) => { s.error = e; console.error('gfweb decoder:', e); kick(); },
+    });
+    s.decoder.configure({ codec: UTF8ToString(codecPtr), description: HEAPU8.slice(descPtr, descPtr + descLen), codedWidth: codedW, codedHeight: codedH, hardwareAcceleration: 'prefer-hardware' });
+
+    // Samples to feed: for each range, from the last keyframe at or before its start until past its end
+    var n = nSamples, plan = [];
+    for (var [a, b] of ranges) {
+      var start = 0;
+      for (var i = 0; i < n; i++) if (samples[i * 4 + 3] && samples[i * 4 + 2] <= a) start = i;
+      for (var i = start; i < n; i++) {
+        if (samples[i * 4 + 3] && samples[i * 4 + 2] > b) break; // next GOP starts after the range
+        plan.push(i);
+      }
+    }
+    console.log(`gfweb: decode ${plan.length}/${n} samples, ranges ${JSON.stringify(ranges.map((r) => r.map((x) => isFinite(x) ? Math.round(x / 1000) : x)))} ms, mode ${mode}, ${outW}x${outH}`);
+    var busy = () => s.decoder.decodeQueueSize > 4 || (mode == 1 ? s.frames.length > 6 : HEAP32[backlogPtr >> 2] > 6);
+    (async () => {
+      try {
+        for (var i of plan) {
+          while (!s.closed && !s.error && busy()) await new Promise((r) => { s.wake = r; setTimeout(r, 20); });
+          if (s.closed || s.error) break;
+          var off = samples[i * 4], size = samples[i * 4 + 1];
+          var data = new Uint8Array(await file.slice(off, off + size).arrayBuffer());
+          s.decoder.decode(new EncodedVideoChunk({ type: samples[i * 4 + 3] ? 'key' : 'delta', timestamp: samples[i * 4 + 2], data }));
+        }
+        if (!s.closed && !s.error) await s.decoder.flush();
+      } catch (e) { s.error = s.error || e; console.error('gfweb decode:', e); }
+      s.done = true;
+      console.log(`gfweb: decode session done (${s.error ? 'error: ' + s.error : 'ok'})`);
+      if (mode == 0 && !s.closed) deliver(-1, 0, 0, 0, 0);
+      kick();
+    })();
+  },
+  gf_dec_close__deps: ['$GFWEB'],
+  gf_dec_close__proxy: 'async',
+  gf_dec_close: (id) => {
+    var s = GFWEB.decoders[id];
+    if (!s) return;
+    s.closed = true;
+    s.frames.forEach((f) => f.close());
+    s.frames = [];
+    if (s.decoder.state != 'closed') s.decoder.close();
+    delete GFWEB.decoders[id];
+  },
+  // mode 1: upload the next decoded frame into GL texture `tex`. Returns its pts in us, -1 if none is ready yet,
+  // -2 when the stream is finished, -3 on a decoder error.
+  gf_dec_upload__deps: ['$GFWEB', '$GL'],
+  gf_dec_upload: (id, tex) => {
+    var s = GFWEB.decoders[id];
+    if (!s) return -2;
+    if (s.error) return -3;
+    var f = s.frames.shift();
+    if (!f) return s.done ? -2 : -1;
+    var gl = GLctx;
+    gl.bindTexture(gl.TEXTURE_2D, GL.textures[tex]);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, f);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.BROWSER_DEFAULT_WEBGL);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    var ts = f.timestamp;
+    f.close();
+    s.wake?.();
+    return ts;
   },
 
   // ---- <video> backend for qml-video-rs ----

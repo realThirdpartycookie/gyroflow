@@ -645,10 +645,11 @@ impl RenderQueue {
                         };
                     }
 
-                    #[cfg(not(target_os = "windows"))]
+                    #[cfg(not(any(target_os = "windows", target_os = "emscripten")))]
                     let _ = if reboot { system_shutdown::reboot() } else { system_shutdown::shutdown() };
                 }
 
+                #[cfg(not(target_os = "emscripten"))] // a web page can't power off the computer
                 match self.when_done {
                     1 => { system_shutdown(false); }
                     2 => { system_shutdown(true); }
@@ -1479,7 +1480,7 @@ impl RenderQueue {
                         }
                     }
 
-                    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                    #[cfg(not(any(target_os = "ios", target_os = "android", target_os = "emscripten")))]
                     let _prevent_system_sleep = keep_awake::inhibit_system("Gyroflow", "Autosyncing");
                     #[cfg(any(target_os = "ios", target_os = "android"))]
                     let _prevent_system_sleep = keep_awake::inhibit_display("Gyroflow", "Autosyncing");

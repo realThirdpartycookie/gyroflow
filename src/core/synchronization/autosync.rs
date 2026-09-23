@@ -133,6 +133,8 @@ impl AutosyncProcess {
         estimator.pose_method.store(sync_params.pose_method as u32, SeqCst);
 
         let thread_pool = rayon::ThreadPoolBuilder::new()
+            // Browser build: wasm32 has 4 GB for everything and each AKAZE pass needs a few hundred MB
+            .num_threads(if cfg!(target_os = "emscripten") { 2 } else { 0 })
             .thread_name(move |i| format!("Sync {}", i))
             .stack_size(10 * 1024 * 1024) // 10 MB
             .panic_handler(move |e| {
@@ -199,6 +201,10 @@ impl AutosyncProcess {
         }
 
         if let Some(_current_range) = self.scaled_ranges_us.iter().find(|(from, to)| (*from..=*to).contains(&timestamp_us)) {
+            #[cfg(target_os = "emscripten")] // don't let decoded frames pile up faster than they're analyzed
+            while self.total_read_frames.load(SeqCst) > self.total_detected_frames.load(SeqCst) + 4 && !self.cancel_flag.load(Relaxed) {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
             self.total_read_frames.fetch_add(1, SeqCst);
 
             self.thread_pool.spawn(move || {

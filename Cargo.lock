@@ -1278,6 +1278,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffmpeg-web-shim"
+version = "0.1.0"
+
+[[package]]
 name = "filetime"
 version = "0.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1650,6 +1654,7 @@ dependencies = [
  "cstr",
  "fastrand",
  "ffmpeg-next",
+ "ffmpeg-web-shim",
  "filetime_creation",
  "flate2",
  "fs_extra",
@@ -3398,6 +3403,7 @@ dependencies = [
  "cpp",
  "cpp_build",
  "cstr",
+ "mp4parse",
  "qmetaobject",
  "qttypes",
  "telemetry-parser",
