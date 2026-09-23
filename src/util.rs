@@ -237,7 +237,8 @@ pub fn set_android_context() {
 pub fn init_logging() {
     use simplelog::*;
 
-    let log_config = [ "mp4parse", "wgpu", "naga", "akaze", "ureq", "rustls", "mdk" ]
+    // Browser: every console line is proxied to the main thread, and rs_sync logs an optimizer error per frame per iteration
+    let log_config = [ "mp4parse", "wgpu", "naga", "akaze", "ureq", "rustls", "mdk", #[cfg(target_os = "emscripten")] "rs_sync" ]
         .into_iter()
         .fold(ConfigBuilder::new(), |mut cfg, x| { cfg.add_filter_ignore_str(x); cfg })
         // Qt and MDK can log while destroying a foreign render thread, after
@@ -253,7 +254,11 @@ pub fn init_logging() {
     #[cfg(target_os = "android")]
     WriteLogger::init(LevelFilter::Debug, log_config, crate::util::AndroidLog::default()).unwrap();
 
-    #[cfg(not(target_os = "android"))]
+    // Browser: no log file, it would only grow in the in-memory filesystem
+    #[cfg(target_os = "emscripten")]
+    let _ = (file_log_config, TermLogger::init(LevelFilter::Debug, log_config, TerminalMode::Mixed, ColorChoice::Never));
+
+    #[cfg(not(any(target_os = "android", target_os = "emscripten")))]
     {
         let exe_loc = gyroflow_core::settings::data_dir().join("gyroflow.log");
         if let Ok(file_log) = std::fs::File::create(exe_loc) {

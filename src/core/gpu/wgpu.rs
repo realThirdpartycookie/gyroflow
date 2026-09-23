@@ -65,7 +65,7 @@ impl Drop for WgpuWrapper {
     }
 }
 
-// ponytail: wasm+atomics makes wgpu types !Send/!Sync; this unsafely asserts it (only valid if wgpu stays on one thread). Proper fix: keep wgpu on a dedicated thread.
+// wasm32 with atomics: wgpu marks its types !Send/!Sync. On emscripten wgpu has no backends (see Cargo.toml) and is never initialized, so nothing is actually shared.
 pub struct Fragile<T>(pub T);
 #[cfg(target_os = "emscripten")] unsafe impl<T> Send for Fragile<T> {}
 #[cfg(target_os = "emscripten")] unsafe impl<T> Sync for Fragile<T> {}
@@ -82,7 +82,7 @@ const EXCLUSIONS: &[&'static str] = &["Microsoft Basic Render Driver"];
 
 impl WgpuWrapper {
     pub fn list_devices() -> Vec<String> {
-        // Browser build: GPU work goes through Qt RHI (WebGL2); wgpu's GL backend would try to create its own EGL context
+        // Browser build: preview runs on Qt RHI (WebGL2), export on WebGPU from JS (web_export.rs); wgpu has no backends here
         if cfg!(target_os = "emscripten") { return Vec::new(); }
         if ADAPTERS.read().is_empty() {
             let devices = std::panic::catch_unwind(|| -> Vec<Adapter> {

@@ -174,6 +174,8 @@ fn entry() {
 
     let fs = RefCell::new(controller::Filesystem::default());
     let fspinned = unsafe { QObjectPinned::new(&fs) };
+    #[cfg(target_os = "emscripten")]
+    controller::WEB_PICKER.store(fs.as_ptr(), std::sync::atomic::Ordering::SeqCst);
 
     util::set_url_catcher(fspinned.get_or_create_cpp_object());
     util::register_url_handlers();

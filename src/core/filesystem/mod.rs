@@ -409,6 +409,16 @@ pub fn read(url: &str) -> Result<Vec<u8>> {
 }
 pub fn write(url: &str, data: &[u8]) -> Result<()> {
     dbg_call!(url);
+    #[cfg(target_os = "emscripten")]
+    { // Browser build: files picked by the user are read-only; saving next to them means downloading
+        let path = url_to_path(url);
+        if path.starts_with("/web/") {
+            unsafe extern "C" { fn gf_web_download(name: *const std::ffi::c_char, data: *const u8, len: usize); }
+            let name = std::ffi::CString::new(get_filename(url)).unwrap_or_default();
+            unsafe { gf_web_download(name.as_ptr(), data.as_ptr(), data.len()); }
+            return Ok(());
+        }
+    }
     start_accessing_url(url, false);
     {
         let mut f = open_file(&url, true, true)?;
@@ -461,6 +471,7 @@ pub fn can_open_file(url: &str) -> bool {
 }
 pub fn can_create_file(folder: &str, filename: &str) -> bool {
     if folder.is_empty() || filename.is_empty() { return false; }
+    if cfg!(target_os = "emscripten") && url_to_path(folder).starts_with("/web/") { return true; } // becomes a download, see write()
     fn inner(folder: &str, filename: &str) -> bool {
         if is_sandboxed() && folder.contains("://") {
             let lock = ALLOWED_FOLDERS.read();

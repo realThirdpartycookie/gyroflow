@@ -2694,7 +2694,7 @@ impl Filesystem {
 }
 
 #[cfg(target_os = "emscripten")]
-static WEB_PICKER: std::sync::atomic::AtomicPtr<Filesystem> = std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
+pub static WEB_PICKER: std::sync::atomic::AtomicPtr<Filesystem> = std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
 
 /// Called by library_gfweb.js (browser main thread) with a JSON array of picked /web paths (malloc'd, freed here).
 #[cfg(target_os = "emscripten")]
@@ -2703,6 +2703,14 @@ pub extern "C" fn gf_web_files_picked(_cb_id: i32, json: *mut std::ffi::c_char) 
     unsafe extern "C" { fn free(p: *mut std::ffi::c_void); }
     let paths: Vec<String> = serde_json::from_str(&unsafe { std::ffi::CStr::from_ptr(json) }.to_string_lossy()).unwrap_or_default();
     unsafe { free(json as *mut _); }
+    let Some(fs) = (unsafe { WEB_PICKER.load(SeqCst).as_ref() }) else { return };
+    if _cb_id == -1 { // dropped onto the page: open the video, sidecars (.gcsv etc.) sit next to it in the same /web folder
+        const VIDEO: &[&str] = &[".mp4", ".mov", ".insv", ".360", ".lrv", ".gyroflow"];
+        if let Some(p) = paths.iter().find(|p| VIDEO.iter().any(|e| p.to_ascii_lowercase().ends_with(e))).or(paths.first()) {
+            fs.catch_url_open(QUrl::from(QString::from(filesystem::path_to_url(p))));
+        }
+        return;
+    }
     let urls: QVariantList = paths.iter().map(|p| QVariant::from(QUrl::from(QString::from(filesystem::path_to_url(p))))).collect();
-    if let Some(fs) = unsafe { WEB_PICKER.load(SeqCst).as_ref() } { fs.web_files_picked(urls); }
+    fs.web_files_picked(urls);
 }

@@ -199,7 +199,17 @@ addToLibrary({
   // ---- file picker ----
   gf_web_pick_files__deps: ['$GFWEB', '$UTF8ToString', '$stringToNewUTF8', 'gf_web_files_picked'],
   // Automation/test hook: register File objects exactly like the picker does, returns their /web paths
-  gf_web_pick_files__postset: 'globalThis.gfWebAddFiles = (files) => GFWEB.addFiles(files); globalThis.gfHeapMB = () => Math.round(HEAPU8.length / 1048576);',
+  // Drops are taken before Qt sees them (Qt would copy the whole file into memory) and opened like picked files.
+  gf_web_pick_files__postset: `globalThis.gfWebAddFiles = (files) => GFWEB.addFiles(files);
+    globalThis.gfHeapMB = () => Math.round(HEAPU8.length / 1048576);
+    if (typeof window != 'undefined' && !ENVIRONMENT_IS_PTHREAD) {
+      addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+      addEventListener('drop', (e) => {
+        if (!e.dataTransfer?.files.length) return;
+        e.preventDefault(); e.stopImmediatePropagation();
+        _gf_web_files_picked(-1, stringToNewUTF8(JSON.stringify(GFWEB.addFiles(e.dataTransfer.files))));
+      }, true);
+    }`,
   gf_web_pick_files: (accept, multiple, cbId) => {
     var input = document.createElement('input');
     input.type = 'file';
@@ -455,6 +465,25 @@ addToLibrary({
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 60000);
     console.log(`gfweb: exported ${a.download} (${(blob.size / 1048576).toFixed(1)} MB)`);
+  },
+
+  // Saving next to a picked file (/web/...) = downloading it (gyroflow_core::filesystem::write)
+  gf_settings_load__deps: ['$stringToNewUTF8'],
+  gf_settings_load__proxy: 'sync',
+  gf_settings_load: () => { try { const s = localStorage.getItem('gyroflow-settings'); return s ? stringToNewUTF8(s) : 0; } catch { return 0; } },
+  gf_settings_save__deps: ['$UTF8ToString'],
+  gf_settings_save__proxy: 'sync',
+  gf_settings_save: (ptr) => { try { localStorage.setItem('gyroflow-settings', UTF8ToString(ptr)); } catch (e) { console.warn('settings not saved', e); } },
+  gf_web_download__deps: ['$UTF8ToString'],
+  gf_web_download__proxy: 'sync',
+  gf_web_download: (namePtr, ptr, len) => {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([HEAPU8.slice(ptr, ptr + len)]));
+    a.download = UTF8ToString(namePtr);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
   },
 
   // ---- <video> backend for qml-video-rs ----

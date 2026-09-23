@@ -106,7 +106,11 @@ fn map() -> Arc<RwLock<HashMap<String, serde_json::Value>>> {
         let file = data_dir().join("settings.json");
         log::info!("Settings file path: {}", file.display());
 
-        if let Ok(v) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&std::fs::read_to_string(file).unwrap_or_default()) {
+        #[cfg(target_os = "emscripten")]
+        let json = web::load();
+        #[cfg(not(target_os = "emscripten"))]
+        let json = std::fs::read_to_string(file).unwrap_or_default();
+        if let Ok(v) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&json) {
             map = v;
         }
 
@@ -135,9 +139,30 @@ fn store() {
     let file = data_dir().join("settings.json");
     let map = map().read().clone();
     let json = serde_json::to_string_pretty(&map).unwrap();
+    #[cfg(target_os = "emscripten")]
+    return web::save(&json);
     if let Err(e) = std::fs::write(&file, json) {
         log::error!("Failed to write the settings file {file:?}: {e:?}");
     } else {
         log::info!("Settings saved to {file:?}");
+    }
+}
+
+// Browser: the in-memory filesystem is gone on reload, so settings.json lives in localStorage (library_gfweb.js)
+#[cfg(target_os = "emscripten")]
+mod web {
+    unsafe extern "C" { fn gf_settings_load() -> *mut std::ffi::c_char; fn gf_settings_save(json: *const std::ffi::c_char); fn free(p: *mut std::ffi::c_void); }
+    pub fn load() -> String {
+        unsafe {
+            let p = gf_settings_load();
+            if p.is_null() { return String::new(); }
+            let s = std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned();
+            free(p as *mut _);
+            s
+        }
+    }
+    pub fn save(json: &str) {
+        let c = std::ffi::CString::new(json).unwrap_or_default();
+        unsafe { gf_settings_save(c.as_ptr()); }
     }
 }
