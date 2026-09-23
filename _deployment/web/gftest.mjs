@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 
 const [,, outDir = '.', stepsFile] = process.argv;
-const PORT = 9333, URL_ = 'http://localhost:8766/';
+const PORT = 9333, URL_ = process.env.GF_URL || 'http://localhost:8766/';
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
