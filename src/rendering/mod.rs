@@ -228,6 +228,26 @@ pub fn render<F, F2>(stab: Arc<StabilizationManager>, progress: F, input_file: &
 
     drop(params);
 
+    let output_ext = render_options.output_filename.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    let preserve_dji = !render_options.strip_dji_metadata && matches!(output_ext.as_str(), "mp4" | "mov") && {
+        let mut source = gyroflow_core::filesystem::open_file(&input_file.url, false, false)
+            .map_err(|e| FFmpegError::CannotOpenInputFile((input_file.url.clone(), e)))?;
+        gyroflow_core::dji_metadata::has_dji_track(source.get_file()).unwrap_or(false)
+    };
+    if preserve_dji {
+        let changed_speed = video_speed != 1.0 || fps_scale.is_some_and(|s| s != 1.0)
+            || stab.keyframes.read().is_keyframed(&gyroflow_core::keyframes::KeyframeType::VideoSpeed);
+        let trimmed = !render_options.preserve_other_tracks && !trim_ranges.is_empty()
+            && (trim_ranges.len() != 1 || trim_ranges[0] != (0.0, 1.0));
+        if changed_speed || trimmed {
+            return Err(FFmpegError::DjiMetadata("Use the full clip at original speed, or disable 'Preserve DJI metadata with stabilized motion'.".into()));
+        }
+        let gyro = stab.gyro.read();
+        if gyro.quaternions.len() < 2 || gyro.smoothed_quaternions.len() < 2 {
+            return Err(FFmpegError::DjiMetadata("No stabilized camera orientations available.".into()));
+        }
+    }
+
     let lens_checksum = stab.lens.read().checksum.clone();
 
     let mut decoder_options = ffmpeg_next::Dictionary::new();
@@ -388,6 +408,7 @@ pub fn render<F, F2>(stab: Arc<StabilizationManager>, progress: F, input_file: &
     proc.video.encoder_params.keyframe_distance_s = render_options.keyframe_distance.max(0.0001);
 
     proc.preserve_other_tracks = render_options.preserve_other_tracks && !crate::util::is_insta360(&input_file.url);
+    proc.rewrite_dji_metadata = preserve_dji || render_options.strip_dji_metadata;
 
     for (key, value) in render_options_dict.iter() {
         log::info!("Setting encoder option {}: {}", key, value);
@@ -449,6 +470,7 @@ pub fn render<F, F2>(stab: Arc<StabilizationManager>, progress: F, input_file: &
 
     let render_globals = Rc::new(RefCell::new(zero_copy::RenderGlobals::default()));
 
+    let metadata_stab = stab.clone();
     proc.on_frame(move |mut timestamp_us, input_frame, output_frame, converter, rate_control| {
         let fill_with_background = render_options.pad_with_black && !trim_ranges.is_empty() &&
             !trim_ranges.iter().any(|x| timestamp_us >= (x.0 * duration_ms * 1000.0).round() as i64 &&
@@ -708,9 +730,37 @@ pub fn render<F, F2>(stab: Arc<StabilizationManager>, progress: F, input_file: &
     if cfg!(not(any(target_os = "android", target_os = "ios"))) && !is_sequence {
         render_filename = format!("{filename}.tmp");
     }
-    proc.render(folder, &render_filename, (output_width as u32, output_height as u32), if render_options.bitrate > 0.0 { Some(render_options.bitrate) } else { None }, cancel_flag, pause_flag)?;
+    proc.render(folder, &render_filename, (output_width as u32, output_height as u32), if render_options.bitrate > 0.0 { Some(render_options.bitrate) } else { None }, cancel_flag.clone(), pause_flag)?;
 
     drop(proc);
+
+    if preserve_dji && !cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+        let url = gyroflow_core::filesystem::get_file_url(folder, &render_filename, false);
+        let mut source = gyroflow_core::filesystem::open_file(&input_file.url, false, false)
+            .map_err(|e| FFmpegError::CannotOpenInputFile((input_file.url.clone(), e)))?;
+        let mut target = gyroflow_core::filesystem::open_file(&url, true, false)
+            .map_err(|e| FFmpegError::CannotOpenOutputFile((url.clone(), e)))?;
+        let gyro = metadata_stab.gyro.read();
+        let params = metadata_stab.params.read();
+        let keys = metadata_stab.keyframes.read();
+        let count = gyroflow_core::dji_metadata::preserve(source.get_file(), target.get_file(), (output_width as u32, output_height as u32), params.frame_readout_time != 0.0, |ms| {
+            // Same reconstruction as gyro_export: the stored smoothed quaternion
+            // is a correction, not the absolute orientation of the virtual camera.
+            let org = gyro.org_quat_at_timestamp(ms);
+            let correction = gyro.smoothed_quat_at_timestamp(ms);
+            let rotation = keys.value_at_video_timestamp(&gyroflow_core::keyframes::KeyframeType::VideoRotation, ms).unwrap_or(params.video_rotation);
+            let smooth = (correction / org).inverse()
+                * nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::z_axis(), rotation.to_radians());
+            // Inverse of telemetry-parser's two DJI coordinate conversions:
+            // core = (0,0,1,0) * DJI * (0.5,-0.5,-0.5,0.5).
+            let y180 = nalgebra::UnitQuaternion::new_normalize(nalgebra::Quaternion::new(0.0, 0.0, 1.0, 0.0));
+            let basis = nalgebra::UnitQuaternion::new_normalize(nalgebra::Quaternion::new(0.5, -0.5, -0.5, 0.5));
+            let dji = y180.inverse() * smooth * basis.inverse();
+            let q = dji.quaternion();
+            [q.w as f32, q.i as f32, q.j as f32, q.k as f32]
+        }).map_err(|e| FFmpegError::DjiMetadata(e.to_string()))?;
+        log::info!("Preserved native DJI tracks; corrected {count} attitude samples");
+    }
 
     let output_url = gyroflow_core::filesystem::get_file_url(folder, &filename, false);
 

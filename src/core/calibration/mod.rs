@@ -8,9 +8,11 @@
 #[cfg(feature = "use-opencv")]
 use opencv::{
     core::{ Mat, Size, Point2f, Vector, Point3d, TermCriteria, TermCriteria_Type, CV_8UC1 },
-    prelude::{ MatTraitConst, MatTraitConstManual },
-    calib3d::{ CALIB_CB_MARKER, Fisheye_CALIB_RECOMPUTE_EXTRINSIC, Fisheye_CALIB_FIX_SKEW }
+    prelude::{ MatTraitConst, MatTraitConstManual }
 };
+
+#[cfg(feature = "use-opencv")]
+use crate::opencv_compat::{CalibrationPoint, CALIB_CB_MARKER, Fisheye_CALIB_RECOMPUTE_EXTRINSIC, Fisheye_CALIB_FIX_SKEW};
 
 use rand::prelude::IteratorRandom;
 use std::{ ffi::c_void, collections::{ BTreeSet, BTreeMap, HashSet } };
@@ -153,9 +155,9 @@ impl LensCalibrator {
                     flags = 0;
                 }
 
-                if opencv::calib3d::find_chessboard_corners_sb(&inp, grid_size, &mut corners, flags)? {
+                if crate::opencv_compat::find_chessboard_corners_sb(&inp, grid_size, &mut corners, flags)? {
                     if corners.rows() > 0 {
-                        let sharpness = opencv::calib3d::estimate_chessboard_sharpness(&inp, grid_size, &corners, 0.8, false, &mut Mat::default()).unwrap_or_default();
+                        let sharpness = crate::opencv_compat::estimate_chessboard_sharpness(&inp, grid_size, &corners, 0.8, false, &mut Mat::default()).unwrap_or_default();
                         let avg_sharpness = *sharpness.get(0).unwrap_or(&100.0);
                         let mut points = Vec::with_capacity(corners.rows() as usize);
 
@@ -263,9 +265,9 @@ impl LensCalibrator {
                 return (999.0000, Matrix3::<f64>::default(), Vector4::<f64>::default(), final_frames);
             }
 
-            let imgpoints = Vector::<Vector<Point2f>>::from_iter(
+            let imgpoints = Vector::<Vector<CalibrationPoint>>::from_iter(
                 final_frames.iter().filter_map(|k| Some(Vector::from_iter(
-                    image_points.get(k)?.points.iter().map(|(x, y)| Point2f::new(*x as f32, *y as f32))
+                    image_points.get(k)?.points.iter().map(|(x, y)| CalibrationPoint::new((*x as f32).into(), (*y as f32).into()))
                 ))
             ));
             let objpoints = Vector::<Vector<Point3d>>::from_iter(

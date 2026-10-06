@@ -648,6 +648,7 @@ fn setup_defaults(stab: &Arc<StabilizationManager>, queue: &mut RenderQueue) -> 
             "metadata":              { "comment": settings::get_str("metadataComment", "") },
             "keyframe_distance":     settings::get_u64("keyframeDistance", 1),
             "preserve_other_tracks": settings::get_bool("preserveOtherTracks", false),
+            "strip_dji_metadata": !settings::get_bool("preserveDjiMetadata", true),
             "pad_with_black":        settings::get_bool("padWithBlack", false),
             "export_trims_separately":settings::get_bool("exportTrimsSeparately", false),
             "audio_codec":           audio_codecs.get(settings::get_u64("audioCodec", 0) as usize).unwrap_or(&"AAC"),

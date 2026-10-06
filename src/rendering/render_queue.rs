@@ -84,6 +84,7 @@ pub struct RenderOptions {
     pub metadata: RenderMetadata,
     pub keyframe_distance: f64,
     pub preserve_other_tracks: bool,
+    pub strip_dji_metadata: bool,
     pub pad_with_black: bool,
     pub export_trims_separately: bool,
     pub audio_codec: String,
@@ -136,6 +137,7 @@ impl RenderOptions {
             if let Some(v) = obj.get("encoder_options")        .and_then(|x| x.as_str())  { self.encoder_options = v.to_string(); }
             if let Some(v) = obj.get("keyframe_distance")      .and_then(|x| x.as_f64())  { self.keyframe_distance = v; }
             if let Some(v) = obj.get("preserve_other_tracks")  .and_then(|x| x.as_bool()) { self.preserve_other_tracks = v; }
+            if let Some(v) = obj.get("strip_dji_metadata").and_then(|x| x.as_bool()) { self.strip_dji_metadata = v; }
             if let Some(v) = obj.get("pad_with_black")         .and_then(|x| x.as_bool()) { self.pad_with_black = v; }
             if let Some(v) = obj.get("export_trims_separately").and_then(|x| x.as_bool()) { self.export_trims_separately = v; }
             if let Some(v) = obj.get("audio_codec")            .and_then(|x| x.as_str())  { self.audio_codec = v.to_string(); }

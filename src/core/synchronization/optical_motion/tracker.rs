@@ -132,7 +132,7 @@ impl KltTracker {
                     core::min_max_loc(&eig_cell, None, Some(&mut cell_strongest), None, None, &mask_cell)?;
                     let cell_threshold = threshold.min(floor.max(QUALITY * cell_strongest));
                     if cell_threshold <= 0.0 || cell_strongest < cell_threshold { continue; }
-                    imgproc::good_features_to_track(&img_cell, &mut corners, (share - has) as i32, cell_threshold / cell_strongest, min_distance, &mask_cell, 7, false, 0.04)?;
+                    crate::opencv_compat::good_features_to_track(&img_cell, &mut corners, (share - has) as i32, cell_threshold / cell_strongest, min_distance, &mask_cell, 7, false, 0.04)?;
                 }
                 for p in corners {
                     let p = Point2f::new(p.x + x0 as f32, p.y + y0 as f32);
@@ -143,7 +143,7 @@ impl KltTracker {
         }
         if self.points.len() >= self.max_points { return Ok(()); }
         let mut corners = Vector::<Point2f>::new();
-        imgproc::good_features_to_track(img, &mut corners, (self.max_points - self.points.len()) as i32, QUALITY, min_distance, &mask, 7, false, 0.04)?;
+        crate::opencv_compat::good_features_to_track(img, &mut corners, (self.max_points - self.points.len()) as i32, QUALITY, min_distance, &mask, 7, false, 0.04)?;
         for p in corners { self.add(p); }
         Ok(())
     }

@@ -42,13 +42,13 @@ impl EstimatePoseTrait for PoseFindHomography {
 
             let mut inliers = Mat::default();
 
-            let homography = opencv::calib3d::find_homography_ext(&a1_pts, &a2_pts, opencv::calib3d::RANSAC, 0.001, &mut inliers, 2000, 0.999)?;
+            let homography = crate::opencv_compat::find_homography_ext(&a1_pts, &a2_pts, crate::opencv_compat::geometry::RANSAC, 0.001, &mut inliers, 2000, 0.999)?;
 
             let mut r: Vector<Mat> = Default::default();
             let mut t: Vector<Mat> = Default::default();
             let mut n: Vector<Mat> = Default::default();
 
-            opencv::calib3d::decompose_homography_mat(&homography, &cam_matrix, &mut r, &mut t, &mut n)?;
+            crate::opencv_compat::geometry::decompose_homography_mat(&homography, &cam_matrix, &mut r, &mut t, &mut n)?;
 
             if let Some((r, _)) = r.iter().zip(t.iter()).fold(None, |cr, (r, t)| {
                     let dot = t.dot(&t).unwrap_or(0.0);

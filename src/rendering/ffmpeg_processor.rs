@@ -42,6 +42,7 @@ pub struct FfmpegProcessor<'a> {
     pub decoder_fps: f64,
 
     pub preserve_other_tracks: bool,
+    pub rewrite_dji_metadata: bool,
 
     #[cfg(target_os = "android")]
     pub android_handles: Option<AndroidHWHandles>,
@@ -81,6 +82,7 @@ pub enum FFmpegError {
     InternalError(ffmpeg_next::Error),
     CannotOpenInputFile((String, FilesystemError)),
     CannotOpenOutputFile((String, FilesystemError)),
+    DjiMetadata(String),
 }
 
 impl std::fmt::Display for FFmpegError {
@@ -104,6 +106,7 @@ impl std::fmt::Display for FFmpegError {
             FFmpegError::UnknownPixelFormat(v) => write!(f, "Unknown pixel format: {:?}", v),
             FFmpegError::PixelFormatNotSupported(v) => write!(f, "Pixel format {:?} is not supported. Supported ones: {:?}. Optimal choice: {:?}", v.0, v.1, v.2),
             FFmpegError::InternalError(e)     => write!(f, "ffmpeg error: {:?}", e),
+            FFmpegError::DjiMetadata(e) => write!(f, "DJI metadata export: {e}"),
             FFmpegError::CannotOpenInputFile((url, e))   => write!(f, "Cannot open input file {url}: {e:?}"),
             FFmpegError::CannotOpenOutputFile((url, e))   => write!(f, "Cannot open output file {url}: {e:?}"),
         }
@@ -219,6 +222,7 @@ impl<'a> FfmpegProcessor<'a> {
             ranges_ms: Vec::new(),
 
             preserve_other_tracks: false,
+            rewrite_dji_metadata: false,
 
             decoder_fps,
 
@@ -297,6 +301,13 @@ impl<'a> FfmpegProcessor<'a> {
             }
 
             let medium = stream.parameters().medium();
+            // Native DJI entries are omitted or restored after encoding. FFmpeg
+            // writes an invalid empty stsd for these unknown codecs.
+            let tag = unsafe { (*stream.parameters().as_ptr()).codec_tag };
+            if self.rewrite_dji_metadata && (tag == u32::from_le_bytes(*b"djmd") || tag == u32::from_le_bytes(*b"dbgi")) {
+                stream_mapping[i] = -1;
+                continue;
+            }
             if medium != media::Type::Audio && medium != media::Type::Video && (!self.preserve_other_tracks || medium != media::Type::Data) {
                 stream_mapping[i] = -1;
                 continue;

@@ -82,6 +82,7 @@ MenuItem {
         property alias exportAudio: audio.checked;
         property alias keyframeDistance: keyframeDistance.value;
         property alias preserveOtherTracks: preserveOtherTracks.checked;
+        property alias preserveDjiMetadata: preserveDjiMetadata.checked;
         property alias padWithBlack: padWithBlack.checked;
         property alias exportTrimsSeparately: exportTrimsSeparately.checked;
         property alias useVulkanEncoder: useVulkanEncoder.checked;
@@ -136,6 +137,7 @@ MenuItem {
             metadata:              { comment: metadataComment.text },
             keyframe_distance:     keyframeDistance.value,
             preserve_other_tracks: preserveOtherTracks.checked,
+            strip_dji_metadata: !preserveDjiMetadata.checked,
             pad_with_black:        padWithBlack.checked,
             export_trims_separately: exportTrimsSeparately.checked,
             audio_codec:           audioCodec.currentText,
@@ -241,6 +243,7 @@ MenuItem {
             if (output.hasOwnProperty("encoder_options"))       encoderOptions.text         = output.encoder_options;
             if (output.hasOwnProperty("keyframe_distance"))     keyframeDistance.value      = +output.keyframe_distance;
             if (output.hasOwnProperty("preserve_other_tracks")) preserveOtherTracks.checked = output.preserve_other_tracks;
+            if (output.hasOwnProperty("strip_dji_metadata")) preserveDjiMetadata.checked = !output.strip_dji_metadata;
             if (output.hasOwnProperty("pad_with_black"))        padWithBlack.checked        = output.pad_with_black;
             if (output.hasOwnProperty("export_trims_separately")) exportTrimsSeparately.checked = output.export_trims_separately;
             if (output.hasOwnProperty("audio_codec"))           Util.setComboValue(audioCodec, output.audio_codec);
@@ -573,6 +576,14 @@ MenuItem {
             checked: false;
             tooltip: qsTr("This disables trim range and you need to use the .mov output file extension");
             onCheckedChanged: if (checked) codec.updateExtension(".mov");
+        }
+        CheckBox {
+            id: preserveDjiMetadata;
+            text: qsTr("Preserve DJI metadata with stabilized motion");
+            checked: true;
+            width: parent.width;
+            Component.onCompleted: contentItem.wrapMode = Text.WordWrap;
+            tooltip: qsTr("For DJI Action 2 / WM169 MP4 or MOV: keeps the native DJI tracks and writes stabilized camera orientation. Requires the full clip at original speed. DJI Mimo recognition is not guaranteed.");
         }
         CheckBox {
             id: padWithBlack;

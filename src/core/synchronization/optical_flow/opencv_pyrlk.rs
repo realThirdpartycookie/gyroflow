@@ -34,7 +34,7 @@ impl OFOpenCVPyrLK {
             let mut pts = Mat::default();
 
             if let Err(e) = inp.and_then(|inp| {
-                opencv::imgproc::good_features_to_track(&inp, &mut pts, 200, 0.01, 10.0, &Mat::default(), 3, false, 0.04)
+                crate::opencv_compat::good_features_to_track(&inp, &mut pts, 200, 0.01, 10.0, &Mat::default(), 3, false, 0.04)
             }) {
                 log::error!("OpenCV error {:?}", e);
             }

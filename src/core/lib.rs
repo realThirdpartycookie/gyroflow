@@ -18,7 +18,10 @@ pub mod zooming;
 pub mod smoothing;
 pub mod filtering;
 pub mod filesystem;
+#[cfg(feature = "use-opencv")]
+pub(crate) mod opencv_compat;
 pub mod gyro_export;
+pub mod dji_metadata;
 pub mod settings;
 
 pub mod gpu;
